@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <title>Disclosure Tensor Weather Map V5 — LP088 Momentum Layer</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="https://aframe.io/releases/1.5.0/aframe.min.js">
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script>
 AFRAME.registerComponent('pulse-scale',{schema:{base:{default:1},amount:{default:.08},speed:{default:1},phase:{default:0}},tick:function(t){let s=this.data.base+Math.sin(t*.001*this.data.speed+this.data.phase)*this.data.amount;this.el.object3D.scale.set(s,s,s);}});
 AFRAME.registerComponent('slow-orbit',{schema:{speed:{default:5}},tick:function(t,dt){this.el.object3D.rotation.y+=THREE.MathUtils.degToRad(this.data.speed*dt/1000);}});
 AFRAME.registerComponent('shockwave-ring',{schema:{color:{default:'#72f4ff'},speed:{default:1},max:{default:7}},init:function(){this.el.setAttribute('color',this.data.color);},tick:function(t){let u=(t*.00011*this.data.speed)%1,r=1.2+u*this.data.max;this.el.setAttribute('radius-inner',r);this.el.setAttribute('radius-outer',r+.055);this.el.setAttribute('material','transparent:true; opacity:'+(0.23*(1-u)).toFixed(3)+'; emissive:'+this.data.color+'; emissiveIntensity:.85; side:double');}});
@@ -147,6 +148,9 @@ AFRAME.registerComponent('disclosure-left-rotate-beethoven', {
   }
 });
 
+
+window.disclosureControllerBuild = 'V7_SCRIPT_FIXED_BEETHOVEN_CONTROLS';
+console.log('Disclosure controller build:', window.disclosureControllerBuild);
 </script>
 <style>
 html, body {
@@ -183,7 +187,7 @@ html, body {
 </style>
 </head>
 <body>
-<div class="badge">Disclosure Tensor Weather Map · V6 Beethoven Controls</div>
+<div class="badge">Disclosure Tensor Weather Map · V7 Script-Fixed Beethoven Controls</div>
 <div class="badge2">Beethoven controller map · LEFT pivots/tilts · RIGHT movement unchanged</div>
 
 <script>
