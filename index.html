@@ -10,39 +10,96 @@ AFRAME.registerComponent('slow-orbit',{schema:{speed:{default:5}},tick:function(
 AFRAME.registerComponent('shockwave-ring',{schema:{color:{default:'#72f4ff'},speed:{default:1},max:{default:7}},init:function(){this.el.setAttribute('color',this.data.color);},tick:function(t){let u=(t*.00011*this.data.speed)%1,r=1.2+u*this.data.max;this.el.setAttribute('radius-inner',r);this.el.setAttribute('radius-outer',r+.055);this.el.setAttribute('material','transparent:true; opacity:'+(0.23*(1-u)).toFixed(3)+'; emissive:'+this.data.color+'; emissiveIntensity:.85; side:double');}});
 
 
+
 AFRAME.registerComponent('left-thumbstick-rotate', {
   schema: {
-    yawSpeed: {default: 1.6},
-    pitchSpeed: {default: 1.25},
-    minPitch: {default: -55},
-    maxPitch: {default: 55}
+    yawSpeed: {default: 2.35},
+    pitchSpeed: {default: 1.7},
+    minPitch: {default: -58},
+    maxPitch: {default: 58}
   },
   init: function () {
     this.axis = {x: 0, y: 0};
     this.pitch = 0;
-    this.el.addEventListener('thumbstickmoved', (e) => {
-      this.axis.x = e.detail.x || 0;
-      this.axis.y = e.detail.y || 0;
-    });
-    this.el.addEventListener('thumbsticktouchend', () => {
+
+    this.updateThumbstick = (x, y) => {
+      this.axis.x = Math.abs(x || 0) > 0.06 ? (x || 0) : 0;
+      this.axis.y = Math.abs(y || 0) > 0.06 ? (y || 0) : 0;
+    };
+
+    this.onThumbstickMoved = (e) => {
+      const hand = (e.target && e.target.components && e.target.components['laser-controls'])
+        ? e.target.components['laser-controls'].data.hand
+        : (e.target && e.target.getAttribute && e.target.getAttribute('data-hand'));
+      if (hand && hand !== 'left') return;
+      this.updateThumbstick(e.detail.x || 0, e.detail.y || 0);
+    };
+
+    this.onAxisMove = (e) => {
+      const target = e.target;
+      const hand = (target && target.components && target.components['laser-controls'])
+        ? target.components['laser-controls'].data.hand
+        : (target && target.getAttribute && target.getAttribute('data-hand'));
+      if (hand && hand !== 'left') return;
+
+      const a = e.detail.axis || e.detail.axes || [];
+      // Quest/A-Frame commonly reports thumbstick as axes[2], axes[3].
+      // Some browsers/controllers report it as axes[0], axes[1].
+      const x = (a.length >= 4 && (Math.abs(a[2]) > 0.02 || Math.abs(a[3]) > 0.02)) ? a[2] : (a[0] || 0);
+      const y = (a.length >= 4 && (Math.abs(a[2]) > 0.02 || Math.abs(a[3]) > 0.02)) ? a[3] : (a[1] || 0);
+      this.updateThumbstick(x, y);
+    };
+
+    this.onThumbstickEnded = () => {
       this.axis.x = 0;
       this.axis.y = 0;
-    });
+    };
+
+    this.el.setAttribute('data-hand', 'left');
+    this.el.addEventListener('thumbstickmoved', this.onThumbstickMoved);
+    this.el.addEventListener('thumbsticktouchend', this.onThumbstickEnded);
+    this.el.addEventListener('axismove', this.onAxisMove);
+    this.el.addEventListener('thumbstickup', this.onThumbstickEnded);
+
+    const scene = this.el.sceneEl;
+    if (scene) {
+      scene.addEventListener('thumbstickmoved', this.onThumbstickMoved);
+      scene.addEventListener('axismove', this.onAxisMove);
+      scene.addEventListener('thumbsticktouchend', this.onThumbstickEnded);
+      scene.addEventListener('thumbstickup', this.onThumbstickEnded);
+    }
   },
-  tick: function () {
+  tick: function (time, dt) {
     if (Math.abs(this.axis.x) < 0.08 && Math.abs(this.axis.y) < 0.08) return;
+
     const rig = document.querySelector('#rig');
     const pivot = document.querySelector('#lookPivot');
     if (!rig || !pivot) return;
 
-    // Left/right on LEFT controller pivots left/right.
-    rig.object3D.rotation.y -= this.axis.x * this.data.yawSpeed * 0.018;
+    const step = Math.min(dt || 16, 33) / 16;
 
-    // Forward/back on LEFT controller rotates up/down.
-    // Forward usually reports negative Y, so this makes forward = rotate/look up.
-    this.pitch += (-this.axis.y) * this.data.pitchSpeed;
+    // LEFT stick left/right = pivot left/right.
+    // Positive x is right on most Quest controllers.
+    rig.object3D.rotation.y -= this.axis.x * this.data.yawSpeed * 0.018 * step;
+
+    // LEFT stick forward/back = rotate view up/down.
+    // Forward is usually negative y; this maps forward to up.
+    this.pitch += (-this.axis.y) * this.data.pitchSpeed * step;
     this.pitch = Math.max(this.data.minPitch, Math.min(this.data.maxPitch, this.pitch));
     pivot.object3D.rotation.x = THREE.MathUtils.degToRad(this.pitch);
+  },
+  remove: function () {
+    this.el.removeEventListener('thumbstickmoved', this.onThumbstickMoved);
+    this.el.removeEventListener('thumbsticktouchend', this.onThumbstickEnded);
+    this.el.removeEventListener('axismove', this.onAxisMove);
+    this.el.removeEventListener('thumbstickup', this.onThumbstickEnded);
+    const scene = this.el.sceneEl;
+    if (scene) {
+      scene.removeEventListener('thumbstickmoved', this.onThumbstickMoved);
+      scene.removeEventListener('axismove', this.onAxisMove);
+      scene.removeEventListener('thumbsticktouchend', this.onThumbstickEnded);
+      scene.removeEventListener('thumbstickup', this.onThumbstickEnded);
+    }
   }
 });
 
@@ -83,7 +140,7 @@ html, body {
 </head>
 <body>
 <div class="badge">Disclosure Tensor Weather Map · V5</div>
-<div class="badge2">LP088 layer · left stick rotates view · right stick moves · VR controls</div>
+<div class="badge2">LP088 layer · LEFT stick rotates/pitches · RIGHT stick moves · VR controls</div>
 
 <script>
 AFRAME.registerComponent('floaty', {
@@ -381,7 +438,7 @@ AFRAME.registerComponent('lorenz-path', {
     </a-entity>
     <a-entity laser-controls="hand: left"
               raycaster="objects: .clickable; far: 35; showLine: true"
-              line="color: #7ef7ff; opacity: .75" left-thumbstick-rotate="yawSpeed:1.6; pitchSpeed:1.25"></a-entity>
+              line="color: #7ef7ff; opacity: .75" data-hand="left" left-thumbstick-rotate="yawSpeed:2.35; pitchSpeed:1.7"></a-entity>
     <a-entity laser-controls="hand: right"
               raycaster="objects: .clickable; far: 35; showLine: true"
               line="color: #ffd76d; opacity: .75"
