@@ -10,95 +10,139 @@ AFRAME.registerComponent('slow-orbit',{schema:{speed:{default:5}},tick:function(
 AFRAME.registerComponent('shockwave-ring',{schema:{color:{default:'#72f4ff'},speed:{default:1},max:{default:7}},init:function(){this.el.setAttribute('color',this.data.color);},tick:function(t){let u=(t*.00011*this.data.speed)%1,r=1.2+u*this.data.max;this.el.setAttribute('radius-inner',r);this.el.setAttribute('radius-outer',r+.055);this.el.setAttribute('material','transparent:true; opacity:'+(0.23*(1-u)).toFixed(3)+'; emissive:'+this.data.color+'; emissiveIntensity:.85; side:double');}});
 
 
-
-AFRAME.registerComponent('left-thumbstick-rotate', {
-  schema: {
-    yawSpeed: {default: 2.35},
-    pitchSpeed: {default: 1.7},
-    minPitch: {default: -58},
-    maxPitch: {default: 58}
-  },
+AFRAME.registerComponent('disclosure-left-rotate-beethoven', {
   init: function () {
-    this.axis = {x: 0, y: 0};
+    this.tmp = new THREE.Vector3();
+    this.side = new THREE.Vector3();
+    this.fwd = new THREE.Vector3();
+    this.up = new THREE.Vector3(0,1,0);
+    this.dead = 0.16;
+    this.lastReport = 0;
+    this.axisMap = {left:{x:0,y:1}, right:{x:0,y:1}};
     this.pitch = 0;
+    this.yawSpeed = 0.00115;
+    this.pitchSpeed = 0.0009;
 
-    this.updateThumbstick = (x, y) => {
-      this.axis.x = Math.abs(x || 0) > 0.06 ? (x || 0) : 0;
-      this.axis.y = Math.abs(y || 0) > 0.06 ? (y || 0) : 0;
-    };
-
-    this.onThumbstickMoved = (e) => {
-      const hand = (e.target && e.target.components && e.target.components['laser-controls'])
-        ? e.target.components['laser-controls'].data.hand
-        : (e.target && e.target.getAttribute && e.target.getAttribute('data-hand'));
-      if (hand && hand !== 'left') return;
-      this.updateThumbstick(e.detail.x || 0, e.detail.y || 0);
-    };
-
-    this.onAxisMove = (e) => {
-      const target = e.target;
-      const hand = (target && target.components && target.components['laser-controls'])
-        ? target.components['laser-controls'].data.hand
-        : (target && target.getAttribute && target.getAttribute('data-hand'));
-      if (hand && hand !== 'left') return;
-
-      const a = e.detail.axis || e.detail.axes || [];
-      // Quest/A-Frame commonly reports thumbstick as axes[2], axes[3].
-      // Some browsers/controllers report it as axes[0], axes[1].
-      const x = (a.length >= 4 && (Math.abs(a[2]) > 0.02 || Math.abs(a[3]) > 0.02)) ? a[2] : (a[0] || 0);
-      const y = (a.length >= 4 && (Math.abs(a[2]) > 0.02 || Math.abs(a[3]) > 0.02)) ? a[3] : (a[1] || 0);
-      this.updateThumbstick(x, y);
-    };
-
-    this.onThumbstickEnded = () => {
-      this.axis.x = 0;
-      this.axis.y = 0;
-    };
-
-    this.el.setAttribute('data-hand', 'left');
-    this.el.addEventListener('thumbstickmoved', this.onThumbstickMoved);
-    this.el.addEventListener('thumbsticktouchend', this.onThumbstickEnded);
-    this.el.addEventListener('axismove', this.onAxisMove);
-    this.el.addEventListener('thumbstickup', this.onThumbstickEnded);
-
-    const scene = this.el.sceneEl;
-    if (scene) {
-      scene.addEventListener('thumbstickmoved', this.onThumbstickMoved);
-      scene.addEventListener('axismove', this.onAxisMove);
-      scene.addEventListener('thumbsticktouchend', this.onThumbstickEnded);
-      scene.addEventListener('thumbstickup', this.onThumbstickEnded);
+    // In-headset debug label to confirm the left stick is being detected.
+    if (!document.querySelector('#leftStickReadout')) {
+      const label = document.createElement('a-text');
+      label.setAttribute('id','leftStickReadout');
+      label.setAttribute('value','LEFT STICK ROTATE: waiting');
+      label.setAttribute('position','-2.05 1.05 -2.2');
+      label.setAttribute('rotation','0 18 0');
+      label.setAttribute('align','left');
+      label.setAttribute('width','3.8');
+      label.setAttribute('color','#7ef7ff');
+      const rig = document.querySelector('#rig');
+      if (rig) rig.appendChild(label);
+      this.readout3d = label;
     }
   },
-  tick: function (time, dt) {
-    if (Math.abs(this.axis.x) < 0.08 && Math.abs(this.axis.y) < 0.08) return;
 
-    const rig = document.querySelector('#rig');
-    const pivot = document.querySelector('#lookPivot');
-    if (!rig || !pivot) return;
+  bestStickFromAxes: function (gp, hand) {
+    const ax = Array.from(gp.axes || []);
+    if (!ax.length) return {x:0, y:0, raw:ax, pair:'none'};
 
-    const step = Math.min(dt || 16, 33) / 16;
+    const saved = this.axisMap[hand];
+    if (saved && ax.length > Math.max(saved.x, saved.y)) {
+      let x = ax[saved.x] || 0, y = ax[saved.y] || 0;
+      if (Math.abs(x) >= this.dead || Math.abs(y) >= this.dead) {
+        return {x, y, raw:ax, pair:`${saved.x}/${saved.y}`};
+      }
+    }
 
-    // LEFT stick left/right = pivot left/right.
-    // Positive x is right on most Quest controllers.
-    rig.object3D.rotation.y -= this.axis.x * this.data.yawSpeed * 0.018 * step;
+    let best = {x:0, y:0, raw:ax, pair:'none', score:0, ix:0, iy:1};
+    for (let i = 0; i < ax.length - 1; i++) {
+      const x = ax[i] || 0, y = ax[i+1] || 0;
+      const score = Math.abs(x) + Math.abs(y);
+      if (score > best.score) {
+        best = {x, y, raw:ax, pair:`${i}/${i+1}`, score, ix:i, iy:i+1};
+      }
+    }
 
-    // LEFT stick forward/back = rotate view up/down.
-    // Forward is usually negative y; this maps forward to up.
-    this.pitch += (-this.axis.y) * this.data.pitchSpeed * step;
-    this.pitch = Math.max(this.data.minPitch, Math.min(this.data.maxPitch, this.pitch));
-    pivot.object3D.rotation.x = THREE.MathUtils.degToRad(this.pitch);
+    if (best.score >= this.dead) {
+      this.axisMap[hand] = {x:best.ix, y:best.iy};
+      return best;
+    }
+    return {x:0, y:0, raw:ax, pair:'none'};
   },
-  remove: function () {
-    this.el.removeEventListener('thumbstickmoved', this.onThumbstickMoved);
-    this.el.removeEventListener('thumbsticktouchend', this.onThumbstickEnded);
-    this.el.removeEventListener('axismove', this.onAxisMove);
-    this.el.removeEventListener('thumbstickup', this.onThumbstickEnded);
+
+  allPads: function () {
+    const out = [];
     const scene = this.el.sceneEl;
-    if (scene) {
-      scene.removeEventListener('thumbstickmoved', this.onThumbstickMoved);
-      scene.removeEventListener('axismove', this.onAxisMove);
-      scene.removeEventListener('thumbsticktouchend', this.onThumbstickEnded);
-      scene.removeEventListener('thumbstickup', this.onThumbstickEnded);
+
+    // Primary path from the Beethoven version: actual WebXR session input sources.
+    const xr = scene && scene.renderer && scene.renderer.xr;
+    const session = xr && xr.getSession && xr.getSession();
+    if (session && session.inputSources) {
+      for (const src of session.inputSources) {
+        if (src && src.gamepad) {
+          out.push({gp:src.gamepad, hand:(src.handedness || '').toLowerCase()});
+        }
+      }
+    }
+
+    // Fallback path from the Beethoven version.
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (let i = 0; i < pads.length; i++) {
+      const gp = pads[i];
+      if (!gp) continue;
+      const id = (gp.id || '').toLowerCase();
+      let hand = '';
+      if (id.includes('left')) hand = 'left';
+      else if (id.includes('right')) hand = 'right';
+      else hand = i === 0 ? 'left' : 'right';
+      out.push({gp, hand});
+    }
+    return out;
+  },
+
+  tick: function (t, dt) {
+    const pads = this.allPads();
+    const rig = this.el.object3D;
+    const pivotEl = document.querySelector('#lookPivot');
+    if (!pivotEl) return;
+    const pivot = pivotEl.object3D;
+
+    let leftActive = false;
+    let debug = 'LEFT STICK ROTATE: waiting';
+
+    for (const item of pads) {
+      const gp = item.gp;
+      const hand = item.hand || '';
+      if (hand !== 'left') continue;
+
+      const stick = this.bestStickFromAxes(gp, hand);
+      let x = stick.x, y = stick.y;
+      if (Math.abs(x) < this.dead) x = 0;
+      if (Math.abs(y) < this.dead) y = 0;
+      if (!x && !y) continue;
+
+      // Requested mapping:
+      // LEFT thumbstick left/right = pivot left/right.
+      // Positive x is right on Quest, so right pivots right.
+      if (x) {
+        rig.rotation.y -= x * dt * this.yawSpeed;
+        leftActive = true;
+      }
+
+      // LEFT thumbstick forward/back = rotate up/down.
+      // Forward on Quest is usually negative y; forward should rotate/look up.
+      if (y) {
+        this.pitch += (-y) * dt * this.pitchSpeed;
+        this.pitch = Math.max(-1.25, Math.min(1.25, this.pitch));
+        pivot.rotation.x = this.pitch;
+        leftActive = true;
+      }
+
+      debug = `LEFT axes ${stick.pair} = ${x.toFixed(2)},${y.toFixed(2)} | L/R=pivot F/B=tilt`;
+    }
+
+    if (leftActive && t - this.lastReport > 200) {
+      const label = document.querySelector('#leftStickReadout');
+      if (label) label.setAttribute('value', debug);
+      window.lastLeftRotateInput = debug;
+      this.lastReport = t;
     }
   }
 });
@@ -139,8 +183,8 @@ html, body {
 </style>
 </head>
 <body>
-<div class="badge">Disclosure Tensor Weather Map · V5</div>
-<div class="badge2">LP088 layer · LEFT stick rotates/pitches · RIGHT stick moves · VR controls</div>
+<div class="badge">Disclosure Tensor Weather Map · V6 Beethoven Controls</div>
+<div class="badge2">Beethoven controller map · LEFT pivots/tilts · RIGHT movement unchanged</div>
 
 <script>
 AFRAME.registerComponent('floaty', {
@@ -430,15 +474,15 @@ AFRAME.registerComponent('lorenz-path', {
   <a-entity light="type: point; intensity: .85; color: #cf8cff; distance: 34" position="-8 4 -10"></a-entity>
   <a-entity light="type: point; intensity: .85; color: #ffd76d; distance: 34" position="8 4 -10"></a-entity>
 
-  <a-entity id="rig" position="0 1.65 4">
+  <a-entity id="rig" position="0 1.65 4" disclosure-left-rotate-beethoven>
     <a-entity id="lookPivot">
-      <a-camera wasd-controls="acceleration: 20" look-controls="pointerLockEnabled: false">
+      <a-camera id="cam" wasd-controls="acceleration: 20" look-controls="pointerLockEnabled: false">
       <a-cursor color="#7ef7ff" raycaster="objects: .clickable" fuse="false" scale=".45 .45 .45"></a-cursor>
     </a-camera>
     </a-entity>
     <a-entity laser-controls="hand: left"
               raycaster="objects: .clickable; far: 35; showLine: true"
-              line="color: #7ef7ff; opacity: .75" data-hand="left" left-thumbstick-rotate="yawSpeed:2.35; pitchSpeed:1.7"></a-entity>
+              line="color: #7ef7ff; opacity: .75" data-hand="left"></a-entity>
     <a-entity laser-controls="hand: right"
               raycaster="objects: .clickable; far: 35; showLine: true"
               line="color: #ffd76d; opacity: .75"
