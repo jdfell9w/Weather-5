@@ -11,146 +11,137 @@ AFRAME.registerComponent('slow-orbit',{schema:{speed:{default:5}},tick:function(
 AFRAME.registerComponent('shockwave-ring',{schema:{color:{default:'#72f4ff'},speed:{default:1},max:{default:7}},init:function(){this.el.setAttribute('color',this.data.color);},tick:function(t){let u=(t*.00011*this.data.speed)%1,r=1.2+u*this.data.max;this.el.setAttribute('radius-inner',r);this.el.setAttribute('radius-outer',r+.055);this.el.setAttribute('material','transparent:true; opacity:'+(0.23*(1-u)).toFixed(3)+'; emissive:'+this.data.color+'; emissiveIntensity:.85; side:double');}});
 
 
-AFRAME.registerComponent('disclosure-left-rotate-beethoven', {
-  init: function () {
-    this.tmp = new THREE.Vector3();
-    this.side = new THREE.Vector3();
-    this.fwd = new THREE.Vector3();
-    this.up = new THREE.Vector3(0,1,0);
-    this.dead = 0.16;
-    this.lastReport = 0;
-    this.axisMap = {left:{x:0,y:1}, right:{x:0,y:1}};
-    this.pitch = 0;
-    this.yawSpeed = 0.00115;
-    this.pitchSpeed = 0.0009;
 
-    // In-headset debug label to confirm the left stick is being detected.
-    if (!document.querySelector('#leftStickReadout')) {
-      const label = document.createElement('a-text');
-      label.setAttribute('id','leftStickReadout');
-      label.setAttribute('value','LEFT STICK ROTATE: waiting');
-      label.setAttribute('position','-2.05 1.05 -2.2');
-      label.setAttribute('rotation','0 18 0');
-      label.setAttribute('align','left');
-      label.setAttribute('width','3.8');
-      label.setAttribute('color','#7ef7ff');
-      const rig = document.querySelector('#rig');
-      if (rig) rig.appendChild(label);
-      this.readout3d = label;
-    }
+AFRAME.registerComponent('quest-fly',{
+  init(){
+    this.tmp=new THREE.Vector3();
+    this.side=new THREE.Vector3();
+    this.fwd=new THREE.Vector3();
+    this.up=new THREE.Vector3(0,1,0);
+    this.speed=0.075;
+    this.zoomSpeed=0.12;
+    this.dead=.16;
+    this.lastReport=0;
+    this.axisMap={left:{x:0,y:1},right:{x:0,y:1}};
+    this.detected=false;
+    this.lastPlayToggle=0;
+
+    const hud=document.querySelector('#readout');
+    if(hud){ hud.textContent='VR controls: LEFT=flying, RIGHT X=pivot, RIGHT Y=tilt'; }
   },
 
-  bestStickFromAxes: function (gp, hand) {
-    const ax = Array.from(gp.axes || []);
-    if (!ax.length) return {x:0, y:0, raw:ax, pair:'none'};
+  bestStickFromAxes(gp, hand){
+    const ax=Array.from(gp.axes||[]);
+    if(!ax.length) return {x:0,y:0, raw:ax, pair:'none'};
 
-    const saved = this.axisMap[hand];
-    if (saved && ax.length > Math.max(saved.x, saved.y)) {
-      let x = ax[saved.x] || 0, y = ax[saved.y] || 0;
-      if (Math.abs(x) >= this.dead || Math.abs(y) >= this.dead) {
-        return {x, y, raw:ax, pair:`${saved.x}/${saved.y}`};
-      }
+    // Use saved pair once a non-zero pair has been detected for that hand.
+    const saved=this.axisMap[hand];
+    if(saved && ax.length>Math.max(saved.x,saved.y)){
+      let x=ax[saved.x]||0, y=ax[saved.y]||0;
+      if(Math.abs(x)>=this.dead || Math.abs(y)>=this.dead) return {x,y,raw:ax,pair:`${saved.x}/${saved.y}`};
     }
 
-    let best = {x:0, y:0, raw:ax, pair:'none', score:0, ix:0, iy:1};
-    for (let i = 0; i < ax.length - 1; i++) {
-      const x = ax[i] || 0, y = ax[i+1] || 0;
-      const score = Math.abs(x) + Math.abs(y);
-      if (score > best.score) {
-        best = {x, y, raw:ax, pair:`${i}/${i+1}`, score, ix:i, iy:i+1};
-      }
+    // Try every adjacent pair. This handles Quest Browser, Meta Link, SteamVR, and A-Frame/OpenXR variants.
+    let best={x:0,y:0,raw:ax,pair:'none',score:0,ix:0,iy:1};
+    for(let i=0;i<ax.length-1;i++){
+      const x=ax[i]||0, y=ax[i+1]||0;
+      const score=Math.abs(x)+Math.abs(y);
+      if(score>best.score){ best={x,y,raw:ax,pair:`${i}/${i+1}`,score,ix:i,iy:i+1}; }
     }
-
-    if (best.score >= this.dead) {
-      this.axisMap[hand] = {x:best.ix, y:best.iy};
+    if(best.score>=this.dead){
+      this.axisMap[hand]={x:best.ix,y:best.iy};
       return best;
     }
-    return {x:0, y:0, raw:ax, pair:'none'};
+    return {x:0,y:0,raw:ax,pair:'none'};
   },
 
-  allPads: function () {
-    const out = [];
-    const scene = this.el.sceneEl;
+  allPads(){
+    const out=[];
+    const scene=this.el.sceneEl;
 
-    // Primary path from the Beethoven version: actual WebXR session input sources.
-    const xr = scene && scene.renderer && scene.renderer.xr;
-    const session = xr && xr.getSession && xr.getSession();
-    if (session && session.inputSources) {
-      for (const src of session.inputSources) {
-        if (src && src.gamepad) {
-          out.push({gp:src.gamepad, hand:(src.handedness || '').toLowerCase()});
+    // Primary path: the actual WebXR session. This is the path that fixed our earlier 4-simplex controller issue.
+    const xr=scene && scene.renderer && scene.renderer.xr;
+    const session=xr && xr.getSession && xr.getSession();
+    if(session && session.inputSources){
+      for(const src of session.inputSources){
+        if(src && src.gamepad){
+          out.push({gp:src.gamepad, hand:(src.handedness||'').toLowerCase()});
         }
       }
     }
 
-    // Fallback path from the Beethoven version.
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    for (let i = 0; i < pads.length; i++) {
-      const gp = pads[i];
-      if (!gp) continue;
-      const id = (gp.id || '').toLowerCase();
-      let hand = '';
-      if (id.includes('left')) hand = 'left';
-      else if (id.includes('right')) hand = 'right';
-      else hand = i === 0 ? 'left' : 'right';
-      out.push({gp, hand});
+    // Fallback path for desktop/Link/browser variants.
+    const pads=navigator.getGamepads?navigator.getGamepads():[];
+    for(let i=0;i<pads.length;i++){
+      const gp=pads[i]; if(!gp) continue;
+      const id=(gp.id||'').toLowerCase();
+      let hand='';
+      if(id.includes('left')) hand='left';
+      else if(id.includes('right')) hand='right';
+      else hand=i===0?'left':'right';
+      out.push({gp,hand});
     }
     return out;
   },
 
-  tick: function (t, dt) {
-    const pads = this.allPads();
-    const rig = this.el.object3D;
-    const pivotEl = document.querySelector('#lookPivot');
-    if (!pivotEl) return;
-    const pivot = pivotEl.object3D;
+  tick(t,dt){
+    const pads=this.allPads();
+    const rig=this.el.object3D;
+    const cam=document.querySelector('#cam').object3D;
+    let leftActive=false, rightActive=false, debugParts=[];
 
-    let leftActive = false;
-    let debug = 'LEFT STICK ROTATE: waiting';
+    for(const item of pads){
+      const gp=item.gp; let hand=item.hand||'';
+      if(hand!=='left' && hand!=='right') continue;
+      const stick=this.bestStickFromAxes(gp,hand);
+      let x=stick.x, y=stick.y;
+      if(Math.abs(x)<this.dead) x=0;
+      if(Math.abs(y)<this.dead) y=0;
+      if(!x && !y) continue;
 
-    for (const item of pads) {
-      const gp = item.gp;
-      const hand = item.hand || '';
-      if (hand !== 'left') continue;
+      debugParts.push(`${hand} axes ${stick.pair} = ${x.toFixed(2)},${y.toFixed(2)}`);
 
-      const stick = this.bestStickFromAxes(gp, hand);
-      let x = stick.x, y = stick.y;
-      if (Math.abs(x) < this.dead) x = 0;
-      if (Math.abs(y) < this.dead) y = 0;
-      if (!x && !y) continue;
-
-      // Requested mapping:
-      // LEFT thumbstick left/right = pivot left/right.
-      // Positive x is right on Quest, so right pivots right.
-      if (x) {
-        rig.rotation.y -= x * dt * this.yawSpeed;
-        leftActive = true;
+      if(hand==='left'){
+        // Left thumbstick: forward/back and strafe, relative to headset direction.
+        cam.getWorldDirection(this.fwd);
+        this.fwd.y=0;
+        if(this.fwd.lengthSq()<.0001) this.fwd.set(0,0,-1);
+        this.fwd.normalize();
+        this.side.crossVectors(this.fwd,this.up).normalize();
+        // Reversed/corrected Quest left stick mapping:
+        // forward = forward, backward = backward, left = left, right = right.
+        this.tmp.copy(this.fwd).multiplyScalar(y*dt*this.speed);
+        this.tmp.add(this.side.clone().multiplyScalar(-x*dt*this.speed));
+        rig.position.add(this.tmp);
+        leftActive=true;
       }
 
-      // LEFT thumbstick forward/back = rotate up/down.
-      // Forward on Quest is usually negative y; forward should rotate/look up.
-      if (y) {
-        this.pitch += (-y) * dt * this.pitchSpeed;
-        this.pitch = Math.max(-1.25, Math.min(1.25, this.pitch));
-        pivot.rotation.x = this.pitch;
-        leftActive = true;
-      }
+      if(hand==='right'){
+        // Right thumbstick left/right: pivot/yaw the whole rig manually.
+        // Push right = pivot right; push left = pivot left.
+        if(x){
+          rig.rotation.y -= x * dt * 0.00115;
+          rightActive=true;
+        }
 
-      debug = `LEFT axes ${stick.pair} = ${x.toFixed(2)},${y.toFixed(2)} | L/R=pivot F/B=tilt`;
+        // Right thumbstick forward/back: tilt/pitch the viewing rig manually.
+        // Push forward = tilt downward toward the symphonic center; pull back = tilt upward.
+        if(y){
+          rig.rotation.x += y * dt * 0.0009;
+          rig.rotation.x = Math.max(-1.45, Math.min(0.55, rig.rotation.x));
+          rightActive=true;
+        }
+      }
     }
 
-    if (leftActive && t - this.lastReport > 200) {
-      const label = document.querySelector('#leftStickReadout');
-      if (label) label.setAttribute('value', debug);
-      window.lastLeftRotateInput = debug;
-      this.lastReport = t;
+    if((leftActive||rightActive) && t-this.lastReport>250){
+      window.lastQuestInput=(leftActive?'LEFT=fly ':'')+(rightActive?'RIGHT=pivot/tilt ':'')+debugParts.join(' | ');
+      const readout=document.querySelector('#readout');
+      if(readout){ readout.textContent=window.lastQuestInput; }
+      this.lastReport=t;
     }
   }
 });
-
-
-window.disclosureControllerBuild = 'V7_SCRIPT_FIXED_BEETHOVEN_CONTROLS';
-console.log('Disclosure controller build:', window.disclosureControllerBuild);
 </script>
 <style>
 html, body {
@@ -186,9 +177,9 @@ html, body {
 }
 </style>
 </head>
-<body>
-<div class="badge">Disclosure Tensor Weather Map · V7 Script-Fixed Beethoven Controls</div>
-<div class="badge2">Beethoven controller map · LEFT pivots/tilts · RIGHT movement unchanged</div>
+<body><div id="readout" style="position:fixed;left:12px;bottom:12px;z-index:9;color:#7ef7ff;background:rgba(0,0,0,.55);padding:8px 10px;border-radius:10px">VR controls loading...</div>
+<div class="badge">Disclosure Tensor Weather Map · V8 Beethoven Exact Controls</div>
+<div class="badge2">EXACT Beethoven controller map · LEFT=fly forward/back/left/right · RIGHT=tilt up/down + pivot left/right</div>
 
 <script>
 AFRAME.registerComponent('floaty', {
@@ -207,32 +198,6 @@ AFRAME.registerComponent('spin-axis', {
     r.x += THREE.MathUtils.degToRad(this.data.x * dt / 1000);
     r.y += THREE.MathUtils.degToRad(this.data.y * dt / 1000);
     r.z += THREE.MathUtils.degToRad(this.data.z * dt / 1000);
-  }
-});
-
-AFRAME.registerComponent('thumbstick-move', {
-  schema: {speed: {default: 0.055}},
-  init: function () {
-    this.axis = {x: 0, y: 0};
-    this.el.addEventListener('thumbstickmoved', (e) => {
-      this.axis.x = e.detail.x || 0;
-      this.axis.y = e.detail.y || 0;
-    });
-    this.el.addEventListener('thumbsticktouchend', () => {
-      this.axis.x = 0;
-      this.axis.y = 0;
-    });
-  },
-  tick: function () {
-    if (Math.abs(this.axis.x) < 0.08 && Math.abs(this.axis.y) < 0.08) return;
-    const rig = document.querySelector('#rig');
-    const cam = document.querySelector('a-camera');
-    if (!rig || !cam) return;
-    const yaw = cam.object3D.rotation.y;
-    const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-    const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
-    rig.object3D.position.addScaledVector(forward, -this.axis.y * this.data.speed);
-    rig.object3D.position.addScaledVector(right, this.axis.x * this.data.speed);
   }
 });
 
@@ -478,19 +443,12 @@ AFRAME.registerComponent('lorenz-path', {
   <a-entity light="type: point; intensity: .85; color: #cf8cff; distance: 34" position="-8 4 -10"></a-entity>
   <a-entity light="type: point; intensity: .85; color: #ffd76d; distance: 34" position="8 4 -10"></a-entity>
 
-  <a-entity id="rig" position="0 1.65 4" disclosure-left-rotate-beethoven>
-    <a-entity id="lookPivot">
-      <a-camera id="cam" wasd-controls="acceleration: 20" look-controls="pointerLockEnabled: false">
+  <a-entity id="rig" position="0 1.65 4" quest-fly>
+    <a-camera id="cam" wasd-controls="acceleration: 20" look-controls="pointerLockEnabled: false">
       <a-cursor color="#7ef7ff" raycaster="objects: .clickable" fuse="false" scale=".45 .45 .45"></a-cursor>
     </a-camera>
-    </a-entity>
-    <a-entity laser-controls="hand: left"
-              raycaster="objects: .clickable; far: 35; showLine: true"
-              line="color: #7ef7ff; opacity: .75" data-hand="left"></a-entity>
-    <a-entity laser-controls="hand: right"
-              raycaster="objects: .clickable; far: 35; showLine: true"
-              line="color: #ffd76d; opacity: .75"
-              thumbstick-move="speed: .055"></a-entity>
+    <a-entity laser-controls="hand:left" raycaster="objects:.clickable;far:35" line="color:#88ddff;opacity:.8"></a-entity>
+    <a-entity laser-controls="hand:right" raycaster="objects:.clickable;far:35" line="color:#ffe28a;opacity:.8"></a-entity>
   </a-entity>
 
 
