@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Disclosure Tensor Weather Map V10 — Post Disclosure Day Timeline + Android Controls</title>
+<title>Disclosure Tensor Weather Map V11 — Post Disclosure Day Timeline + Android Touch Forward/Back</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script>
@@ -27,7 +27,7 @@ AFRAME.registerComponent('quest-fly',{
     this.lastPlayToggle=0;
 
     const hud=document.querySelector('#readout');
-    if(hud){ hud.textContent='VR: LEFT=flying, RIGHT X=pivot, RIGHT Y=tilt · Android: ▲ forward / ▼ back'; }
+    if(hud){ hud.textContent='VR: LEFT move, RIGHT pivot/tilt · Android: ▲ forward / ▼ back'; }
   },
 
   bestStickFromAxes(gp, hand){
@@ -150,7 +150,7 @@ AFRAME.registerComponent('android-touch-forward',{
     this.up=new THREE.Vector3(0,1,0);
     this.speed=0.0048;
     window.androidMoveState=window.androidMoveState||{forward:0};
-    const setMove=(v)=>{ window.androidMoveState.forward=v; const r=document.querySelector('#readout'); if(r){r.textContent=v<0?'Android touch: FORWARD':v>0?'Android touch: BACK':'Android touch controls ready';} };
+    const setMove=(v)=>{ window.androidMoveState.forward=v; const r=document.querySelector('#readout'); if(r){r.textContent=v>0?'Android touch: FORWARD':v<0?'Android touch: BACK':'Android touch controls ready';} };
     const bind=(id,val)=>{
       const el=document.getElementById(id);
       if(!el) return;
@@ -159,8 +159,8 @@ AFRAME.registerComponent('android-touch-forward',{
       ['touchstart','pointerdown','mousedown'].forEach(ev=>el.addEventListener(ev,down,{passive:false}));
       ['touchend','touchcancel','pointerup','pointercancel','mouseleave','mouseup'].forEach(ev=>el.addEventListener(ev,up,{passive:false}));
     };
-    bind('androidForward',-1);
-    bind('androidBack',1);
+    bind('androidForward',1);
+    bind('androidBack',-1);
     const hud=document.querySelector('#androidControls');
     if(hud){ hud.style.display='flex'; }
   },
@@ -176,7 +176,7 @@ AFRAME.registerComponent('android-touch-forward',{
     this.fwd.y=0;
     if(this.fwd.lengthSq()<.0001) this.fwd.set(0,0,-1);
     this.fwd.normalize();
-    rig.position.add(this.fwd.multiplyScalar((-z)*dt*this.speed));
+    rig.position.add(this.fwd.multiplyScalar((z)*dt*this.speed));
   }
 });
 
@@ -270,8 +270,8 @@ html, body {
   <button id="androidForward" type="button">▲ FORWARD</button>
   <button id="androidBack" type="button">▼ BACK</button>
 </div>
-<div class="badge">Disclosure Tensor Weather Map · V10 Post-Release Timeline · Android + V8 Beethoven Controls</div>
-<div class="badge2">EXACT Beethoven controller map · LEFT=fly forward/back/left/right · RIGHT=tilt up/down + pivot left/right</div>
+<div class="badge">Disclosure Tensor Weather Map · V11 Post-Release Timeline · Android Touch + Quest Controls</div>
+<div class="badge2">Quest: LEFT move forward/back/left/right · RIGHT tilt up/down + pivot left/right</div>
 
 <script>
 AFRAME.registerComponent('floaty', {
