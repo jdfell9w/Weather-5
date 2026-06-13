@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Disclosure Tensor Weather Map V11 — Post Disclosure Day Timeline + Android Touch Forward/Back</title>
+<title>Disclosure Tensor Weather Map V12 — Post Disclosure Day Timeline + Android Touch Forward/Back Fixed</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script>
@@ -176,7 +176,7 @@ AFRAME.registerComponent('android-touch-forward',{
     this.fwd.y=0;
     if(this.fwd.lengthSq()<.0001) this.fwd.set(0,0,-1);
     this.fwd.normalize();
-    rig.position.add(this.fwd.multiplyScalar((z)*dt*this.speed));
+    rig.position.add(this.fwd.multiplyScalar((-z)*dt*this.speed));
   }
 });
 
@@ -270,7 +270,7 @@ html, body {
   <button id="androidForward" type="button">▲ FORWARD</button>
   <button id="androidBack" type="button">▼ BACK</button>
 </div>
-<div class="badge">Disclosure Tensor Weather Map · V11 Post-Release Timeline · Android Touch + Quest Controls</div>
+<div class="badge">Disclosure Tensor Weather Map · V12 Post-Release Timeline · Android Touch + Quest Controls</div>
 <div class="badge2">Quest: LEFT move forward/back/left/right · RIGHT tilt up/down + pivot left/right</div>
 
 <script>
